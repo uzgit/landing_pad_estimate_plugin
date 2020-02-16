@@ -1,0 +1,90 @@
+#include <gazebo/gazebo.hh>
+#include <gazebo/common/common.hh>
+#include <gazebo/physics/physics.hh>
+#include <gazebo/rendering/rendering.hh>
+#include "ros/ros.h"
+#include "ros/callback_queue.h"
+#include "ros/subscribe_options.h"
+#include <geometry_msgs/Vector3.h>
+#include <ignition/math.hh>
+
+#include <thread>
+
+using namespace gazebo;
+
+class LandingPadEstimatePlugin : public VisualPlugin
+{
+	public:
+ 		LandingPadEstimatePlugin() {}
+		virtual ~LandingPadEstimatePlugin() {}
+
+	protected:
+		// Called when the plugin is loaded into the simulator
+		void Load(rendering::VisualPtr _visual, sdf::ElementPtr _sdf)
+		{
+			std::cerr << "LandingPadEstimatePlugin is running!" << std::endl;
+
+			this->visual = _visual;
+			this->visual->SetVisibilityFlags( GZ_VISIBILITY_GUI );
+
+			const std::string landing_pad_relative_position_topic_name = "/landing_pad/global_position";
+
+			if( ! ros::isInitialized() )
+			{
+				int argc = 0;
+				char **argv = NULL;
+				ros::init(argc, argv, "gazebo_landing_pad_estimate_plugin_client",
+				ros::init_options::NoSigintHandler);
+			}
+
+			this->ros_node.reset( new ros::NodeHandle( "gazebo_landing_pad_estimate_plugin_client" ));
+			ros::SubscribeOptions so_landing_pad_relative_position = ros::SubscribeOptions::create<geometry_msgs::Vector3>(
+                                landing_pad_relative_position_topic_name,
+                                1,
+                                boost::bind(&LandingPadEstimatePlugin::set_landing_pad_estimate_position, this, _1),
+                                ros::VoidPtr(),
+                                & this->ros_queue
+                                );
+	                this->landing_pad_relative_position_subscriber = this->ros_node->subscribe(so_landing_pad_relative_position);
+			this->ros_queue_thread = std::thread(std::bind(&LandingPadEstimatePlugin::queue_thread, this));
+		}
+
+	private:
+		rendering::VisualPtr visual;
+		std::unique_ptr<ros::NodeHandle> ros_node;
+		ros::CallbackQueue ros_queue;
+		std::thread ros_queue_thread;
+		ros::Subscriber landing_pad_relative_position_subscriber;
+
+		void set_landing_pad_estimate_position(const geometry_msgs::Vector3ConstPtr & _msg)
+		{
+			ignition::math::Vector3<double> position = ignition::math::Vector3<double>( _msg->x, _msg->y, _msg->z );
+			ignition::math::Quaternion<double> rotation = ignition::math::Quaternion<double>(0, 0, 0, 1);
+			ignition::math::Pose3<double> pose = ignition::math::Pose3<double>(position, rotation);
+
+			try
+			{
+				this->visual->MoveToPosition(pose, 0.01);
+			}
+			catch( const Ogre::ItemIdentityException e )
+			{
+				std::cerr << "Caught an exception." << std::endl;
+			}
+
+//			this->visual->SetWorldPosition(position);
+
+//			std::cerr << "setting world position of " << this->visual->Name() << std::endl;
+		}
+
+		void queue_thread()
+		{
+			static const double timeout = 0.05;
+			while(this->ros_node->ok())
+			{
+				this->ros_queue.callAvailable(ros::WallDuration(timeout));
+			}
+		}
+};
+
+// Register this plugin with the simulator
+GZ_REGISTER_VISUAL_PLUGIN(LandingPadEstimatePlugin)
