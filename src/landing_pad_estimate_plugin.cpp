@@ -74,7 +74,7 @@ class LandingPadEstimatePlugin : public ModelPlugin
 
 			try
 			{
-				std::cerr << "( " << pose.Pos().X() << ", " << pose.Pos().Y() << ", " << pose.Pos().Z() << ")" << std::endl;
+//				std::cerr << "( " << pose.Pos().X() << ", " << pose.Pos().Y() << ", " << pose.Pos().Z() << ")" << std::endl;
 				this->model->SetWorldPose(pose);
 			}
 			catch( ... )
