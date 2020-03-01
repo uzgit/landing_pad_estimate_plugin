@@ -6,14 +6,15 @@
 #include "ros/callback_queue.h"
 #include "ros/subscribe_options.h"
 #include <geometry_msgs/Vector3.h>
-#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <ignition/math.hh>
+#include <sdf/sdf.hh>
 
 #include <thread>
 
 using namespace gazebo;
 
-const std::string landing_pad_global_position_topic_name = "/landing_pad/global_pose";
+std::string topic = "/landing_pad/pose";
 
 class LandingPadEstimatePlugin : public ModelPlugin
 {
@@ -39,10 +40,20 @@ class LandingPadEstimatePlugin : public ModelPlugin
 				ros::init(argc, argv, "gazebo_landing_pad_estimate_plugin_client");
 			}
 
+			if( _sdf->HasElement("topic") )
+			{
+				topic = _sdf->GetElement("topic")->Get<std::string>();
+				std::cerr << "Subscribing to topic [" << topic << "]." << std::endl;
+			}
+			else
+			{
+				std::cerr << "Missing parameter 'topic' in LandingPadEstimate plugin. Defaulting to [" << topic << "]." << std::endl;
+			}
+
 			this->ros_node.reset(new ros::NodeHandle("gazebo_landing_pad_estimate_plugin_client"));
 
-			ros::SubscribeOptions so_landing_pad_global_position = ros::SubscribeOptions::create<geometry_msgs::Pose>(
-					landing_pad_global_position_topic_name,
+			ros::SubscribeOptions so_landing_pad_global_position = ros::SubscribeOptions::create<geometry_msgs::PoseStamped>(
+					topic,
 					1,
 					boost::bind(&LandingPadEstimatePlugin::set_landing_pad_estimate_position, this, _1),
 					ros::VoidPtr(),
@@ -61,20 +72,18 @@ class LandingPadEstimatePlugin : public ModelPlugin
 		std::thread ros_queue_thread;
 		ros::Subscriber landing_pad_global_position_subscriber;
 
-		void set_landing_pad_estimate_position(const geometry_msgs::PoseConstPtr & _msg)
+		void set_landing_pad_estimate_position(const geometry_msgs::PoseStampedConstPtr & _msg)
 		{
 
-			std::cerr << "inside landing_pad_estimate callback" << std::endl;
-
-			ignition::math::Vector3<double>    position = ignition::math::Vector3<double>( _msg->position.x, _msg->position.y, _msg->position.z );
+			ignition::math::Vector3<double>    position = ignition::math::Vector3<double>( _msg->pose.position.x, _msg->pose.position.y, _msg->pose.position.z );
 			//										(w, x, y, z) NOT (x, y, z, w)
 //			ignition::math::Quaternion<double> rotation = ignition::math::Quaternion<double>(1, 0, 0, 0);
-			ignition::math::Quaternion<double> rotation = ignition::math::Quaternion<double>(_msg->orientation.w, _msg->orientation.x, _msg->orientation.y, _msg->orientation.z);
+			ignition::math::Quaternion<double> rotation = ignition::math::Quaternion<double>(_msg->pose.orientation.w, _msg->pose.orientation.x, _msg->pose.orientation.y, _msg->pose.orientation.z);
 			ignition::math::Pose3<double>          pose = ignition::math::Pose3<double>( position, rotation );
 
 			try
 			{
-//				std::cerr << "( " << pose.Pos().X() << ", " << pose.Pos().Y() << ", " << pose.Pos().Z() << ")" << std::endl;
+				std::cerr << "( " << pose.Pos().X() << ", " << pose.Pos().Y() << ", " << pose.Pos().Z() << ")" << std::endl;
 				this->model->SetWorldPose(pose);
 			}
 			catch( ... )
